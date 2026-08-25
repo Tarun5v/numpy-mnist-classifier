@@ -12,7 +12,8 @@ class NeuralNetwork:
     Training uses cross-entropy loss with gradient descent optimization.
     """
 
-    def __init__(self, layer_sizes, learning_rate=0.1, lr_decay=0.95, lr_min=0.001):
+    def __init__(self, layer_sizes, learning_rate=0.1, lr_decay=0.95, lr_min=0.001,
+                 l2_lambda=0.001):
         """
         Initialize the neural network with random weights and zero biases.
 
@@ -22,6 +23,7 @@ class NeuralNetwork:
             learning_rate: float, step size for gradient descent updates
             lr_decay: float, multiply learning rate by this after each epoch
             lr_min: float, minimum learning rate (don't decay below this)
+            l2_lambda: float, L2 regularization strength (0 to disable)
         """
         self.layer_sizes = layer_sizes
         self.num_layers = len(layer_sizes)
@@ -29,6 +31,7 @@ class NeuralNetwork:
         self.lr_decay = lr_decay
         self.lr_min = lr_min
         self.current_lr = learning_rate
+        self.l2_lambda = l2_lambda
 
         # Initialize weights using He initialization for ReLU layers
         # This scales weights by sqrt(2/n_in) to keep variance stable across layers
@@ -101,8 +104,8 @@ class NeuralNetwork:
 
     def cross_entropy_loss(self, y_pred, y_true):
         """
-        Cross-entropy loss: -sum(y_true * log(y_pred))
-        Measures how far predicted probabilities are from true labels.
+        Cross-entropy loss with optional L2 regularization.
+        L2 adds a penalty for large weights to prevent overfitting.
 
         Args:
             y_pred: predicted probabilities (n_samples, n_classes)
@@ -115,6 +118,14 @@ class NeuralNetwork:
         # Clip predictions to avoid log(0) which gives -inf
         y_pred_clipped = np.clip(y_pred, 1e-12, 1 - 1e-12)
         loss = -np.sum(y_true * np.log(y_pred_clipped)) / n_samples
+
+        # Add L2 regularization term: lambda/2 * sum(w^2)
+        if self.l2_lambda > 0:
+            l2_loss = 0
+            for w in self.weights:
+                l2_loss += np.sum(w ** 2)
+            loss += (self.l2_lambda / 2) * l2_loss / n_samples
+
         return loss
 
     def one_hot_encode(self, y, num_classes):
@@ -155,6 +166,10 @@ class NeuralNetwork:
             dw = a_prev.T @ dz
             # Gradient for biases: db = sum(dZ, axis=0)
             db = np.sum(dz, axis=0, keepdims=True)
+
+            # Add L2 regularization gradient: lambda * w
+            if self.l2_lambda > 0:
+                dw += self.l2_lambda * self.weights[i]
 
             self.d_weights.insert(0, dw)
             self.d_biases.insert(0, db)
@@ -318,7 +333,8 @@ class NeuralNetwork:
             'layer_sizes': self.layer_sizes,
             'learning_rate': self.learning_rate,
             'lr_decay': self.lr_decay,
-            'lr_min': self.lr_min
+            'lr_min': self.lr_min,
+            'l2_lambda': self.l2_lambda
         }
         np.save(filepath, data, allow_pickle=True)
         print(f"Model weights saved to {filepath}")
@@ -331,7 +347,8 @@ class NeuralNetwork:
             layer_sizes=data['layer_sizes'],
             learning_rate=data['learning_rate'],
             lr_decay=data.get('lr_decay', 0.95),
-            lr_min=data.get('lr_min', 0.001)
+            lr_min=data.get('lr_min', 0.001),
+            l2_lambda=data.get('l2_lambda', 0.001)
         )
         model.weights = data['weights']
         model.biases = data['biases']
