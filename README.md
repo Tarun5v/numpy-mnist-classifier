@@ -1,6 +1,19 @@
 # NumPy MNIST Classifier
 
+[![Python 3.8+](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub stars](https://img.shields.io/github/stars/Tarun5v/numpy-mnist-classifier?style=social)](https://github.com/Tarun5v/numpy-mnist-classifier/stargazers)
+[![CI](https://github.com/Tarun5v/numpy-mnist-classifier/actions/workflows/ci.yml/badge.svg)](https://github.com/Tarun5v/numpy-mnist-classifier/actions/workflows/ci.yml)
+
 A neural network built from scratch that classifies handwritten digits (0-9) from the MNIST dataset using only Python and NumPy. No PyTorch, no TensorFlow, no Keras, no AI libraries — just raw matrix math and gradient descent.
+
+## Demo
+
+![Demo](demo.gif)
+
+Draw a digit on the canvas, hit **Predict**, and watch the network classify it in real time. The GUI (`draw_predict.py`) resizes your drawing to 28x28, feeds it through the trained model, and shows confidence scores for each digit.
+
+> **To record your own:** launch `python3 draw_predict.py`, use [LICEcap](https://www.cockos.com/licecap/) or [ffmpeg](https://ffmpeg.org/) (`ffmpeg -f avfoundation -i 1 -r 15 demo.gif`) to capture the window, then place the output as `demo.gif` in the repo root.
 
 ## Why I Built This
 
@@ -191,6 +204,10 @@ numpy-mnist-classifier/
 ├── models/              # Saved model weights (.npy files)
 ├── results/             # Generated plots and visualizations
 ├── data/                # MNIST dataset (downloaded automatically)
+├── tests/               # Test suite
+│   └── test_neural_network.py
+├── .github/workflows/   # GitHub Actions CI
+│   └── ci.yml
 └── README.md
 ```
 
