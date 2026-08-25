@@ -13,7 +13,7 @@ class NeuralNetwork:
     """
 
     def __init__(self, layer_sizes, learning_rate=0.1, lr_decay=0.95, lr_min=0.001,
-                 l2_lambda=0.001):
+                 l2_lambda=0.001, activation='relu'):
         """
         Initialize the neural network with random weights and zero biases.
 
@@ -24,6 +24,8 @@ class NeuralNetwork:
             lr_decay: float, multiply learning rate by this after each epoch
             lr_min: float, minimum learning rate (don't decay below this)
             l2_lambda: float, L2 regularization strength (0 to disable)
+            activation: str, activation function for hidden layers
+                       'relu', 'sigmoid', 'tanh', or 'leaky_relu'
         """
         self.layer_sizes = layer_sizes
         self.num_layers = len(layer_sizes)
@@ -32,6 +34,10 @@ class NeuralNetwork:
         self.lr_min = lr_min
         self.current_lr = learning_rate
         self.l2_lambda = l2_lambda
+        self.activation_name = activation
+
+        # Set activation functions based on name
+        self.activation_fn, self.activation_deriv = self._get_activation(activation)
 
         # Initialize weights using He initialization for ReLU layers
         # This scales weights by sqrt(2/n_in) to keep variance stable across layers
@@ -40,7 +46,14 @@ class NeuralNetwork:
         for i in range(self.num_layers - 1):
             fan_in = layer_sizes[i]
             fan_out = layer_sizes[i + 1]
-            w = np.random.randn(fan_in, fan_out) * np.sqrt(2.0 / fan_in)
+            # Use different initialization based on activation
+            if activation == 'relu' or activation == 'leaky_relu':
+                w = np.random.randn(fan_in, fan_out) * np.sqrt(2.0 / fan_in)
+            elif activation == 'sigmoid' or activation == 'tanh':
+                # Xavier initialization works better for sigmoid/tanh
+                w = np.random.randn(fan_in, fan_out) * np.sqrt(1.0 / fan_in)
+            else:
+                w = np.random.randn(fan_in, fan_out) * np.sqrt(2.0 / fan_in)
             b = np.zeros((1, fan_out))
             self.weights.append(w)
             self.biases.append(b)
@@ -49,6 +62,18 @@ class NeuralNetwork:
         self.z_cache = []  # pre-activation values
         self.a_cache = []  # post-activation values
 
+    def _get_activation(self, name):
+        """Get activation function and its derivative by name."""
+        activations = {
+            'relu': (self.relu, self.relu_derivative),
+            'sigmoid': (self.sigmoid, self.sigmoid_derivative),
+            'tanh': (self.tanh, self.tanh_derivative),
+            'leaky_relu': (self.leaky_relu, self.leaky_relu_derivative)
+        }
+        if name not in activations:
+            raise ValueError(f"Unknown activation: {name}. Choose from: {list(activations.keys())}")
+        return activations[name]
+
     def relu(self, z):
         """ReLU activation: max(0, z). Introduces non-linearity."""
         return np.maximum(0, z)
@@ -56,6 +81,33 @@ class NeuralNetwork:
     def relu_derivative(self, z):
         """Derivative of ReLU: 1 if z > 0, else 0."""
         return (z > 0).astype(float)
+
+    def sigmoid(self, z):
+        """Sigmoid activation: 1 / (1 + e^(-z)). Maps to (0, 1)."""
+        # Clip z to prevent overflow
+        z_clipped = np.clip(z, -500, 500)
+        return 1 / (1 + np.exp(-z_clipped))
+
+    def sigmoid_derivative(self, z):
+        """Derivative of sigmoid: sigmoid(z) * (1 - sigmoid(z))."""
+        s = self.sigmoid(z)
+        return s * (1 - s)
+
+    def tanh(self, z):
+        """Tanh activation: (e^z - e^(-z)) / (e^z + e^(-z)). Maps to (-1, 1)."""
+        return np.tanh(z)
+
+    def tanh_derivative(self, z):
+        """Derivative of tanh: 1 - tanh(z)^2."""
+        return 1 - np.tanh(z) ** 2
+
+    def leaky_relu(self, z, alpha=0.01):
+        """Leaky ReLU: z if z > 0, else alpha * z. Prevents dead neurons."""
+        return np.where(z > 0, z, alpha * z)
+
+    def leaky_relu_derivative(self, z, alpha=0.01):
+        """Derivative of Leaky ReLU: 1 if z > 0, else alpha."""
+        return np.where(z > 0, 1.0, alpha)
 
     def softmax(self, z):
         """
@@ -91,8 +143,8 @@ class NeuralNetwork:
 
             # Apply activation function
             if i < self.num_layers - 2:
-                # Hidden layers use ReLU
-                a = self.relu(z)
+                # Hidden layers use selected activation
+                a = self.activation_fn(z)
             else:
                 # Output layer uses Softmax
                 a = self.softmax(z)
@@ -176,7 +228,7 @@ class NeuralNetwork:
 
             # Propagate error to previous layer (if not at input layer)
             if i > 0:
-                dz = dz @ self.weights[i].T * self.relu_derivative(self.z_cache[i - 1])
+                dz = dz @ self.weights[i].T * self.activation_deriv(self.z_cache[i - 1])
 
         # Update weights and biases using gradient descent
         for i in range(self.num_layers - 1):
@@ -334,7 +386,8 @@ class NeuralNetwork:
             'learning_rate': self.learning_rate,
             'lr_decay': self.lr_decay,
             'lr_min': self.lr_min,
-            'l2_lambda': self.l2_lambda
+            'l2_lambda': self.l2_lambda,
+            'activation': self.activation_name
         }
         np.save(filepath, data, allow_pickle=True)
         print(f"Model weights saved to {filepath}")
@@ -348,7 +401,8 @@ class NeuralNetwork:
             learning_rate=data['learning_rate'],
             lr_decay=data.get('lr_decay', 0.95),
             lr_min=data.get('lr_min', 0.001),
-            l2_lambda=data.get('l2_lambda', 0.001)
+            l2_lambda=data.get('l2_lambda', 0.001),
+            activation=data.get('activation', 'relu')
         )
         model.weights = data['weights']
         model.biases = data['biases']
