@@ -1,0 +1,295 @@
+import numpy as np
+
+
+class NeuralNetwork:
+    """
+    A feedforward neural network for multi-class classification.
+    Built from scratch using only NumPy for matrix operations.
+
+    Architecture:
+        Input (784) -> Hidden1 (128, ReLU) -> Hidden2 (64, ReLU) -> Output (10, Softmax)
+
+    Training uses cross-entropy loss with gradient descent optimization.
+    """
+
+    def __init__(self, layer_sizes, learning_rate=0.1):
+        """
+        Initialize the neural network with random weights and zero biases.
+
+        Args:
+            layer_sizes: list of ints, number of neurons in each layer
+                         e.g. [784, 128, 64, 10] for MNIST classification
+            learning_rate: float, step size for gradient descent updates
+        """
+        self.layer_sizes = layer_sizes
+        self.num_layers = len(layer_sizes)
+        self.learning_rate = learning_rate
+
+        # Initialize weights using He initialization for ReLU layers
+        # This scales weights by sqrt(2/n_in) to keep variance stable across layers
+        self.weights = []
+        self.biases = []
+        for i in range(self.num_layers - 1):
+            fan_in = layer_sizes[i]
+            fan_out = layer_sizes[i + 1]
+            w = np.random.randn(fan_in, fan_out) * np.sqrt(2.0 / fan_in)
+            b = np.zeros((1, fan_out))
+            self.weights.append(w)
+            self.biases.append(b)
+
+        # Storage for cached values during forward pass (used in backprop)
+        self.z_cache = []  # pre-activation values
+        self.a_cache = []  # post-activation values
+
+    def relu(self, z):
+        """ReLU activation: max(0, z). Introduces non-linearity."""
+        return np.maximum(0, z)
+
+    def relu_derivative(self, z):
+        """Derivative of ReLU: 1 if z > 0, else 0."""
+        return (z > 0).astype(float)
+
+    def softmax(self, z):
+        """
+        Softmax activation for output layer.
+        Converts raw logits to probabilities that sum to 1.
+        Uses numerical stability trick by subtracting the max value.
+        """
+        exp_z = np.exp(z - np.max(z, axis=1, keepdims=True))
+        return exp_z / np.sum(exp_z, axis=1, keepdims=True)
+
+    def forward(self, X):
+        """
+        Forward propagation: pass input through the network layer by layer.
+
+        For each hidden layer: z = X@W + b, then a = relu(z)
+        For output layer: z = X@W + b, then a = softmax(z)
+
+        Args:
+            X: input data, shape (n_samples, n_features)
+
+        Returns:
+            output probabilities, shape (n_samples, n_classes)
+        """
+        self.z_cache = []
+        self.a_cache = [X]
+
+        current_input = X
+
+        for i in range(self.num_layers - 1):
+            # Linear transformation: z = input @ weight + bias
+            z = current_input @ self.weights[i] + self.biases[i]
+            self.z_cache.append(z)
+
+            # Apply activation function
+            if i < self.num_layers - 2:
+                # Hidden layers use ReLU
+                a = self.relu(z)
+            else:
+                # Output layer uses Softmax
+                a = self.softmax(z)
+
+            self.a_cache.append(a)
+            current_input = a
+
+        return current_input
+
+    def cross_entropy_loss(self, y_pred, y_true):
+        """
+        Cross-entropy loss: -sum(y_true * log(y_pred))
+        Measures how far predicted probabilities are from true labels.
+
+        Args:
+            y_pred: predicted probabilities (n_samples, n_classes)
+            y_true: one-hot encoded true labels (n_samples, n_classes)
+
+        Returns:
+            scalar loss value
+        """
+        n_samples = y_true.shape[0]
+        # Clip predictions to avoid log(0) which gives -inf
+        y_pred_clipped = np.clip(y_pred, 1e-12, 1 - 1e-12)
+        loss = -np.sum(y_true * np.log(y_pred_clipped)) / n_samples
+        return loss
+
+    def one_hot_encode(self, y, num_classes):
+        """Convert integer labels to one-hot vectors."""
+        one_hot = np.zeros((y.shape[0], num_classes))
+        one_hot[np.arange(y.shape[0]), y] = 1
+        return one_hot
+
+    def backward(self, y_true):
+        """
+        Backpropagation: compute gradients of loss w.r.t. all weights and biases.
+
+        Uses the chain rule to propagate error backwards from output to input.
+        For each layer, we compute:
+            dZ = error * activation_derivative
+            dW = A_prev.T @ dZ / n_samples
+            db = sum(dZ, axis=0, keepdims=True) / n_samples
+
+        Args:
+            y_true: one-hot encoded true labels (n_samples, n_classes)
+        """
+        n_samples = y_true.shape[0]
+        num_classes = self.layer_sizes[-1]
+
+        self.d_weights = []
+        self.d_biases = []
+
+        # Output layer error: dZ = y_pred - y_true
+        # This gradient comes from combining softmax + cross-entropy derivatives
+        y_pred = self.a_cache[-1]
+        dz = (y_pred - y_true) / n_samples
+
+        # Compute gradients for each layer going backwards
+        for i in range(self.num_layers - 2, -1, -1):
+            a_prev = self.a_cache[i]
+
+            # Gradient for weights: dW = A_prev.T @ dZ
+            dw = a_prev.T @ dz
+            # Gradient for biases: db = sum(dZ, axis=0)
+            db = np.sum(dz, axis=0, keepdims=True)
+
+            self.d_weights.insert(0, dw)
+            self.d_biases.insert(0, db)
+
+            # Propagate error to previous layer (if not at input layer)
+            if i > 0:
+                dz = dz @ self.weights[i].T * self.relu_derivative(self.z_cache[i - 1])
+
+        # Update weights and biases using gradient descent
+        for i in range(self.num_layers - 1):
+            self.weights[i] -= self.learning_rate * self.d_weights[i]
+            self.biases[i] -= self.learning_rate * self.d_biases[i]
+
+    def compute_accuracy(self, X, y):
+        """
+        Compute classification accuracy.
+
+        Args:
+            X: input features (n_samples, n_features)
+            y: integer labels (n_samples,)
+
+        Returns:
+            accuracy as a float between 0 and 1
+        """
+        predictions = self.forward(X)
+        predicted_labels = np.argmax(predictions, axis=1)
+        accuracy = np.mean(predicted_labels == y)
+        return accuracy
+
+    def predict(self, X):
+        """
+        Predict class labels for input data.
+
+        Args:
+            X: input features (n_samples, n_features)
+
+        Returns:
+            predicted class labels (n_samples,)
+        """
+        predictions = self.forward(X)
+        return np.argmax(predictions, axis=1)
+
+    def predict_proba(self, X):
+        """
+        Predict class probabilities for input data.
+
+        Args:
+            X: input features (n_samples, n_features)
+
+        Returns:
+            class probabilities (n_samples, n_classes)
+        """
+        return self.forward(X)
+
+    def train(self, X_train, y_train, X_val, y_val, epochs=50, batch_size=128):
+        """
+        Train the neural network using mini-batch gradient descent.
+
+        Args:
+            X_train: training features (n_samples, n_features)
+            y_train: training labels (n_samples,)
+            X_val: validation features
+            y_val: validation labels
+            epochs: number of complete passes through training data
+            batch_size: number of samples per mini-batch
+
+        Returns:
+            dict with training history (losses, accuracies)
+        """
+        n_samples = X_train.shape[0]
+        y_train_onehot = self.one_hot_encode(y_train, self.layer_sizes[-1])
+
+        history = {
+            'train_loss': [],
+            'val_loss': [],
+            'train_acc': [],
+            'val_acc': []
+        }
+
+        for epoch in range(epochs):
+            # Shuffle training data each epoch for better convergence
+            indices = np.random.permutation(n_samples)
+            X_shuffled = X_train[indices]
+            y_shuffled = y_train_onehot[indices]
+
+            # Mini-batch training
+            for start in range(0, n_samples, batch_size):
+                end = min(start + batch_size, n_samples)
+                X_batch = X_shuffled[start:end]
+                y_batch = y_shuffled[start:end]
+
+                # Forward pass
+                self.forward(X_batch)
+                # Backward pass (computes gradients and updates weights)
+                self.backward(y_batch)
+
+            # Record metrics at end of each epoch
+            train_loss = self.cross_entropy_loss(
+                self.forward(X_train), y_train_onehot
+            )
+            val_loss = self.cross_entropy_loss(
+                self.forward(X_val), self.one_hot_encode(y_val, self.layer_sizes[-1])
+            )
+            train_acc = self.compute_accuracy(X_train, y_train)
+            val_acc = self.compute_accuracy(X_val, y_val)
+
+            history['train_loss'].append(train_loss)
+            history['val_loss'].append(val_loss)
+            history['train_acc'].append(train_acc)
+            history['val_acc'].append(val_acc)
+
+            if (epoch + 1) % 5 == 0 or epoch == 0:
+                print(
+                    f"Epoch {epoch + 1}/{epochs} - "
+                    f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} - "
+                    f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+                )
+
+        return history
+
+    def save_weights(self, filepath):
+        """Save all weights and biases to a .npy file."""
+        data = {
+            'weights': self.weights,
+            'biases': self.biases,
+            'layer_sizes': self.layer_sizes,
+            'learning_rate': self.learning_rate
+        }
+        np.save(filepath, data, allow_pickle=True)
+        print(f"Model weights saved to {filepath}")
+
+    @classmethod
+    def load_weights(cls, filepath):
+        """Load a saved model from a .npy file."""
+        data = np.load(filepath, allow_pickle=True).item()
+        model = cls(
+            layer_sizes=data['layer_sizes'],
+            learning_rate=data['learning_rate']
+        )
+        model.weights = data['weights']
+        model.biases = data['biases']
+        print(f"Model weights loaded from {filepath}")
+        return model
