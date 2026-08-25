@@ -231,7 +231,7 @@ No GPU required. Trains in about 2-3 minutes on a CPU.
 
 ## License
 
-MIT
+[MIT](LICENSE)
 
 ## Acknowledgments
 
