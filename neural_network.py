@@ -12,7 +12,7 @@ class NeuralNetwork:
     Training uses cross-entropy loss with gradient descent optimization.
     """
 
-    def __init__(self, layer_sizes, learning_rate=0.1):
+    def __init__(self, layer_sizes, learning_rate=0.1, lr_decay=0.95, lr_min=0.001):
         """
         Initialize the neural network with random weights and zero biases.
 
@@ -20,10 +20,15 @@ class NeuralNetwork:
             layer_sizes: list of ints, number of neurons in each layer
                          e.g. [784, 128, 64, 10] for MNIST classification
             learning_rate: float, step size for gradient descent updates
+            lr_decay: float, multiply learning rate by this after each epoch
+            lr_min: float, minimum learning rate (don't decay below this)
         """
         self.layer_sizes = layer_sizes
         self.num_layers = len(layer_sizes)
         self.learning_rate = learning_rate
+        self.lr_decay = lr_decay
+        self.lr_min = lr_min
+        self.current_lr = learning_rate
 
         # Initialize weights using He initialization for ReLU layers
         # This scales weights by sqrt(2/n_in) to keep variance stable across layers
@@ -204,7 +209,8 @@ class NeuralNetwork:
         """
         return self.forward(X)
 
-    def train(self, X_train, y_train, X_val, y_val, epochs=50, batch_size=128):
+    def train(self, X_train, y_train, X_val, y_val, epochs=50, batch_size=128,
+              early_stopping_patience=10, lr_schedule=True):
         """
         Train the neural network using mini-batch gradient descent.
 
@@ -215,6 +221,8 @@ class NeuralNetwork:
             y_val: validation labels
             epochs: number of complete passes through training data
             batch_size: number of samples per mini-batch
+            early_stopping_patience: stop if val loss doesn't improve for this many epochs
+            lr_schedule: whether to decay learning rate over time
 
         Returns:
             dict with training history (losses, accuracies)
@@ -226,8 +234,15 @@ class NeuralNetwork:
             'train_loss': [],
             'val_loss': [],
             'train_acc': [],
-            'val_acc': []
+            'val_acc': [],
+            'learning_rate': []
         }
+
+        # Early stopping variables
+        best_val_loss = float('inf')
+        patience_counter = 0
+        best_weights = None
+        best_biases = None
 
         for epoch in range(epochs):
             # Shuffle training data each epoch for better convergence
@@ -260,13 +275,38 @@ class NeuralNetwork:
             history['val_loss'].append(val_loss)
             history['train_acc'].append(train_acc)
             history['val_acc'].append(val_acc)
+            history['learning_rate'].append(self.current_lr)
+
+            # Learning rate scheduling
+            if lr_schedule:
+                self.current_lr = max(self.current_lr * self.lr_decay, self.lr_min)
+                self.learning_rate = self.current_lr
+
+            # Early stopping check
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                patience_counter = 0
+                # Save best weights
+                best_weights = [w.copy() for w in self.weights]
+                best_biases = [b.copy() for b in self.biases]
+            else:
+                patience_counter += 1
 
             if (epoch + 1) % 5 == 0 or epoch == 0:
                 print(
                     f"Epoch {epoch + 1}/{epochs} - "
                     f"Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} - "
-                    f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}"
+                    f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f} - "
+                    f"LR: {self.current_lr:.6f}"
                 )
+
+            # Early stopping
+            if patience_counter >= early_stopping_patience:
+                print(f"\nEarly stopping at epoch {epoch + 1} (no improvement for {early_stopping_patience} epochs)")
+                # Restore best weights
+                self.weights = best_weights
+                self.biases = best_biases
+                break
 
         return history
 
@@ -276,7 +316,9 @@ class NeuralNetwork:
             'weights': self.weights,
             'biases': self.biases,
             'layer_sizes': self.layer_sizes,
-            'learning_rate': self.learning_rate
+            'learning_rate': self.learning_rate,
+            'lr_decay': self.lr_decay,
+            'lr_min': self.lr_min
         }
         np.save(filepath, data, allow_pickle=True)
         print(f"Model weights saved to {filepath}")
@@ -287,7 +329,9 @@ class NeuralNetwork:
         data = np.load(filepath, allow_pickle=True).item()
         model = cls(
             layer_sizes=data['layer_sizes'],
-            learning_rate=data['learning_rate']
+            learning_rate=data['learning_rate'],
+            lr_decay=data.get('lr_decay', 0.95),
+            lr_min=data.get('lr_min', 0.001)
         )
         model.weights = data['weights']
         model.biases = data['biases']
