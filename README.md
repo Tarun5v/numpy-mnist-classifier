@@ -48,9 +48,19 @@ Building this from scratch taught me more than any tutorial:
 
 Training loss decreased from 0.24 to 0.007 over 30 epochs. Validation loss stabilized around 0.08, showing good generalization without overfitting.
 
+![Training History](results/training_history.png)
+
 ### Confusion Matrix
 
 The model rarely confuses similar digits. Most errors happen between visually similar pairs like 4/9 or 3/8.
+
+![Confusion Matrix](results/confusion_matrix.png)
+
+### Sample Predictions
+
+Green means correct, red means wrong. The model handles most digits with high confidence.
+
+![Sample Predictions](results/sample_predictions.png)
 
 ## How It Works
 
