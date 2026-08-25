@@ -66,6 +66,12 @@ Green means correct, red means wrong. The model handles most digits with high co
 
 ![Sample Predictions](results/sample_predictions.png)
 
+### Benchmark Comparison
+
+Tested 8 different configurations to find the best setup. Tanh activation with a deeper network performed best (98.02% validation accuracy), but ReLU is fastest.
+
+![Benchmark Comparison](results/benchmark_comparison.png)
+
 ## How It Works
 
 ### Network Architecture
