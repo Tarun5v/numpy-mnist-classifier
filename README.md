@@ -30,6 +30,10 @@ Building this from scratch taught me more than any tutorial:
 - **Mini-batch gradient descent** is faster and more stable than full-batch
 - **ReLU** is simple but effective — `max(0, z)` beats sigmoid in hidden layers
 - **Softmax + cross-entropy** derivatives simplify to `y_pred - y_true`, which is elegant
+- **Learning rate scheduling** helps the model converge faster and avoid local minima
+- **Early stopping** prevents overfitting without manually choosing the right number of epochs
+- **L2 regularization** penalizes large weights, forcing the model to learn simpler patterns
+- **Activation functions** matter — sigmoid saturates, tanh is zero-centered, leaky relu avoids dead neurons
 
 ## Results
 
@@ -69,14 +73,23 @@ Green means correct, red means wrong. The model handles most digits with high co
 ```
 Input Layer (784 neurons) — one per pixel
     ↓
-Hidden Layer 1 (128 neurons, ReLU)
+Hidden Layer 1 (128 neurons, activation)
     ↓
-Hidden Layer 2 (64 neurons, ReLU)
+Hidden Layer 2 (64 neurons, activation)
     ↓
 Output Layer (10 neurons, Softmax) — one per digit class
 ```
 
 Each MNIST image is 28×28 pixels = 784 features. The network learns to map these pixel values to one of 10 digit classes (0-9).
+
+### Activation Functions
+
+The network supports multiple activation functions for hidden layers:
+
+- **ReLU** (default): `f(z) = max(0, z)` — Simple, fast, avoids vanishing gradients
+- **Sigmoid**: `f(z) = 1 / (1 + e^(-z))` — Maps to (0, 1), can cause vanishing gradients
+- **Tanh**: `f(z) = (e^z - e^(-z)) / (e^z + e^(-z))` — Maps to (-1, 1), zero-centered
+- **Leaky ReLU**: `f(z) = z if z > 0, else 0.01*z` — Prevents dead neurons
 
 ### Forward Propagation
 
@@ -94,21 +107,17 @@ Where:
 - `z` = pre-activation value (linear combination)
 - `a` = post-activation value (non-linear transformation)
 
-**Hidden layers** use ReLU: `f(z) = max(0, z)`
-- Simple, fast, and avoids the vanishing gradient problem
-- Outputs zero for negative inputs, passes positive values through
-
 **Output layer** uses Softmax: `f(z_i) = e^(z_i) / Σ e^(z_j)`
 - Converts raw scores (logits) into probabilities that sum to 1
 - The digit with the highest probability is the prediction
 
-### Loss Function: Cross-Entropy
+### Loss Function: Cross-Entropy with L2 Regularization
 
 ```
-L = -1/N * Σ Σ y_true * log(y_pred)
+L = -1/N * Σ Σ y_true * log(y_pred) + λ/2 * Σ w²
 ```
 
-This measures how far our predicted probabilities are from the true labels. When the model assigns high probability to the correct class, the loss is low. When it's confidently wrong, the loss explodes — which is exactly what we want.
+This measures how far our predicted probabilities are from the true labels, with an optional L2 penalty to prevent overfitting. The regularization term penalizes large weights, pushing the model toward simpler solutions.
 
 ### Backpropagation
 
@@ -121,12 +130,12 @@ dZ = (y_pred - y_true) / N
 
 **Hidden layer gradients:**
 ```
-dW = A_prev^T · dZ / N
+dW = A_prev^T · dZ / N + λ * W
 db = Σ dZ / N
-dZ_prev = dZ · W^T ⊙ ReLU'(z)
+dZ_prev = dZ · W^T ⊙ activation'(z)
 ```
 
-Where `⊙` is element-wise multiplication and `ReLU'(z) = 1 if z > 0, else 0`.
+Where `⊙` is element-wise multiplication and the `+ λ * W` term is the L2 regularization gradient.
 
 ### Weight Updates (Gradient Descent)
 
@@ -135,13 +144,24 @@ W = W - learning_rate * dW
 b = b - learning_rate * db
 ```
 
-The learning rate (0.1) controls how big each update step is. Too high and the model diverges. Too low and training takes forever.
+The learning rate controls how big each update step is. Too high and the model diverges. Too low and training takes forever.
+
+### Learning Rate Scheduling
+
+The learning rate decays over time: `lr = max(lr * decay, lr_min)`
+
+This helps the model converge faster early in training, then make finer adjustments later.
+
+### Early Stopping
+
+Training stops automatically if validation loss doesn't improve for `patience` epochs. This prevents overfitting and saves training time. The model restores the best weights found during training.
 
 ### Weight Initialization
 
-Weights are initialized using He initialization: `W ~ N(0, sqrt(2/n_in))`
+- **He initialization** (ReLU/Leaky ReLU): `W ~ N(0, sqrt(2/n_in))`
+- **Xavier initialization** (Sigmoid/Tanh): `W ~ N(0, sqrt(1/n_in))`
 
-This keeps the variance of activations stable across layers, which helps with ReLU networks. Without proper initialization, gradients can vanish or explode during backpropagation.
+Proper initialization keeps activation variance stable across layers, preventing vanishing or exploding gradients.
 
 ## Technical Challenges
 
@@ -159,7 +179,9 @@ numpy-mnist-classifier/
 ├── neural_network.py    # NeuralNetwork class (forward, backward, train, predict, save/load)
 ├── main.py              # Training script with data loading and visualization
 ├── predict.py           # Load saved model and make predictions
-├── requirements.txt     # Dependencies (numpy, matplotlib)
+├── benchmark.py         # Compare different configurations (activations, architectures)
+├── draw_predict.py      # Tkinter GUI for drawing digits and live prediction
+├── requirements.txt     # Dependencies (numpy, matplotlib, Pillow)
 ├── models/              # Saved model weights (.npy files)
 ├── results/             # Generated plots and visualizations
 ├── data/                # MNIST dataset (downloaded automatically)
@@ -183,6 +205,8 @@ pip install -r requirements.txt
 ```bash
 python3 main.py          # train the model (downloads MNIST automatically)
 python3 predict.py       # load saved model and predict on test images
+python3 benchmark.py     # compare different configurations
+python3 draw_predict.py  # launch GUI to draw and predict digits
 ```
 
 ### Use in Your Code
@@ -203,29 +227,56 @@ probabilities = model.predict_proba(X_new)  # Returns probability distribution
 ```python
 from neural_network import NeuralNetwork
 
-# Create model with custom architecture
+# Create model with custom architecture and activation
 model = NeuralNetwork(
     layer_sizes=[784, 256, 128, 64, 10],  # deeper network
-    learning_rate=0.05                      # smaller learning rate
+    learning_rate=0.05,                      # smaller learning rate
+    activation='tanh',                       # try different activations
+    l2_lambda=0.001,                         # L2 regularization
+    lr_decay=0.95,                           # learning rate decay
+    lr_min=0.001                             # minimum learning rate
 )
 
-# Train with custom settings
+# Train with early stopping
 history = model.train(
     X_train, y_train,
     X_val, y_val,
-    epochs=50,
-    batch_size=64
+    epochs=100,
+    batch_size=64,
+    early_stopping_patience=15,
+    lr_schedule=True
 )
 
 # Save weights
 model.save_weights('models/custom_model.npy')
 ```
 
+### Running Benchmarks
+
+Compare different configurations to find what works best:
+
+```bash
+python3 benchmark.py
+```
+
+This tests various activation functions, learning rates, and network architectures, then generates a comparison plot in `results/benchmark_comparison.png`.
+
+### Drawing Digits
+
+Launch the GUI to draw digits and see live predictions:
+
+```bash
+python3 draw_predict.py
+```
+
+Draw a digit (0-9) on the black canvas, click "Predict", and see the model's classification with confidence scores for each digit.
+
 ## Dependencies
 
 - Python 3.8+
 - NumPy — matrix operations and linear algebra
 - Matplotlib — visualization only (training plots, confusion matrix)
+- Pillow — image processing for the drawing GUI
 
 No GPU required. Trains in about 2-3 minutes on a CPU.
 
