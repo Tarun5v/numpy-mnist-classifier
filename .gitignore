@@ -28,7 +28,6 @@ Thumbs.db
 # Project-specific
 data/
 models/*.npy
-results/
 *.npy
 !models/
 
